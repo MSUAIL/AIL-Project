@@ -17,6 +17,40 @@ Using the Raspberry Pi Imager on a separate device, I flashed the 128Gb MicroSD 
 
 Inserted the MicroSD into the Pi and logged in
 
+#### Altering the user structure
+
+The default user, "u_senseme", was initially a sudo user. I set up Z-wave with this sudo user. Then I removed u_senseme from the sudoers file:
+
+removed it from the sudo group using user `root`: 
+
+```bash
+userdel u_senseme sudo
+```
+
+I've added a new **group** called `admin` (which is defined in /etc/sudoers to have the same permissions as %sudo for now)
+
+I then added a user `u_admin` using:
+```bash
+useradd u_admin`
+```
+and assigned u_admin to groups with:
+```bash
+usermod -aG admin u_admin 
+usermod -aG users u_admin` # this too...
+usermod -aG sambashare u_admin` # I set up a simple samba sharing server to add and remove files to the pi easier... it doesnt work. *Will Uninstall*
+usermod -aG adm u_admin` # for access to some extra log files
+```
+
+Then I had to alter some of the files in the /etc/sudoers.d directory.
+
+After checking the contents of each file, I realized which one was keeping u_senseme an elevated user.
+
+After cd-ing into this sudoers.d directory, I used:
+```bash
+mv 010_pi-nopasswd 010_pi-nopasswd~
+``` 
+to prevent that file from being read but without deleting it. (As the documentation says to do)
+
 #### Installing Z-Wave-js-ui
 
 Roughly followed the https://zwave-js.github.io/zwave-js-ui guide for setting up Z-Wave
@@ -24,15 +58,15 @@ Roughly followed the https://zwave-js.github.io/zwave-js-ui guide for setting up
 
 
 Make a home directory for the new app
-```
+```bash
 mkdir ~/zwave-js-ui
 ```
 Enter it
-```
+```bash
 cd ~/zwave-js-ui
 ```
 Pull the latest package from Github
-```
+```bash
 # download latest version
 curl -s https://api.github.com/repos/zwave-js/zwave-js-ui/releases/latest  \
 | grep "browser_download_url.*zip" \
@@ -41,12 +75,13 @@ curl -s https://api.github.com/repos/zwave-js/zwave-js-ui/releases/latest  \
 | wget -i -
 ```
 Now if you `ls` you will see four .zip files... Only need one (the guide unzips them all?)
-```
+```bash
 unzip zwave-js-ui-v*arm64.zip
 ```
 
-Now you can host the Z-Wave server with:
-```
+Now you can 'manually' host the Z-Wave server with:
+```bash
+cd ~/zwave-js-ui
 ./zwave-js-ui
 ```
 
@@ -55,30 +90,47 @@ The instance should be accessible by accessing this url in your browser:
 http://localhost:8091
 ```
 
-#### Altering the user structure
+##### Setting up the zwave service
 
-If I was smart I would restart and do this better. I am not.
+**From the u_admin user**
 
-The default user, "u_senseme", was initially a sudo user. I set up Z-wave with this sudo user. waiting to suffer the consequences.
+```bash
+sudo vim /etc/systemd/system/zwave.service
+```
+and entered this data:
 
-removed it from the sudo group using `root`: `userdel u_senseme sudo`
+```conf
+[Unit]
+Description=Z-Wave JS custom service
+After=network.target
 
-I've added a new **group** called `admin` (which is defined in /etc/sudoers to have the same permissions as %sudo for now)
+[Service]
+Type=simple
+User=u_senseme
+WorkingDirectory=/home/u_senseme/zwave-js-ui
+ExecStart=/home/u_senseme/zwave-js-ui/zwave-js-ui
 
-I then added a user `u_admin` using `useradd u_admin`
+[Install]
+WantedBy=multi-user.target
+```
+Save and exit from editor
 
-and assigned it to a group with `usermod -aG admin u_admin`
+ran these commands to refresh systemd and enable the service:
 
-I additionally did some things I don't really understand (as usual). I added u_admin to some more groups:
-`usermod -aG users u_admin` # this too...
-`usermod -aG sambashare u_admin` # I set up a simple samba sharing server to add and remove files to the pi easier... it doesnt work. 
-`usermod -aG adm u_admin` # for access to some extra log files
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable zwave.service
+sudo systemctl start zwave.service
+sudo systemctl status zwave.serivce
+```
 
-Then I had to alter some of the files in the /etc/sudoers.d directory.
+Now, zwave is a systemd controlled process. It will start on boot, and can be stopped / restarted with `systemctl`
 
-After checking the contents of each file, I realized which one was keeping u_senseme an elevated user.
+to read the logs:
 
-Aftering cd-ing into this sudoers.d directory, I used `mv 010_pi-nopasswd 010_pi-nopasswd~` to prevent that file from being read but without deleting it. 
+```bash
+sudo journalctl -u zwave.service
+```
 
 ##### Errors I encountered:
 
@@ -94,12 +146,19 @@ Aftering cd-ing into this sudoers.d directory, I used `mv 010_pi-nopasswd 010_pi
 * It is a .JSON file so its ugly.... but inside was a setting zwave > port : `/dev/zwave`. I changed the value from `/dev/zwave` to `/dev/ttyACM0` and saved the file.
 *relaunched the instance and got back to the dashboard
 
+**Root Cause**
+
+Was running zwave from the wrong directory. need to be in the zwave-js-ui folder before running the executable. 
+
+
 #### Installing Home Assistant Core
 
 Once again, not a fan of using docker and I didn't install the Home Assistant OS (which might have been easier, but I'd rather suffer)
 
 * Followed this guide pretty closely:
     * https://www.home-assistant.io/installation/raspberrypi/#install-home-assistant-core
+
+
 
 #### Installing mosquitto ? 
 
