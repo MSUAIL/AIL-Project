@@ -1,0 +1,3 @@
+[submodule "AIL-Project.wiki"]
+	path = AIL-Project.wiki
+	url = git@github.com:MSUAIL/AIL-Project.wiki.git
